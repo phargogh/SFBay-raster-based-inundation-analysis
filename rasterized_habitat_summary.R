@@ -44,6 +44,14 @@ list_vectors <- function(directory){
   return(list.files(path=directory, pattern='.shp$', full.names=TRUE))
 }
 
+# For eyeballing the CRSs of the habitat vectors.
+list_crs <- function(list_of_vectors) {
+  for (vector_path in list_of_vectors){
+    layer_name <- gsub('.shp', '', basename(vector_path))
+    print(OGRSpatialRef(vector_path, layer_name))
+  }
+}
+
 bbox_union_of_vectors <- function(list_of_vectors) {
   bbox_union <- NULL
   for (vector_path in list_of_vectors){
