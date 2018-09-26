@@ -55,7 +55,6 @@ bbox_union_of_vectors <- function(list_of_vectors) {
     # need the bounding boxes for this calculation.
     extent_string <- ogrinfo(vector_path, layer_name, so=TRUE)[9]  # 9th row contains extents.
     vector_bbox = as.numeric(unlist(regmatches(extent_string, gregexpr('(-?[0-9.]+)', extent_string))))
-    print(vector_bbox)
 
     if (is.null(bbox_union)) {
       bbox_union <- vector_bbox
