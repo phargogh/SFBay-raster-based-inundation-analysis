@@ -38,14 +38,16 @@ library(sp)
 #         * Determine inundated habitat
 #         * Write overlap*pixelarea to output CSV
 
-# Create a function to take a directory with vectors in it, determine bounding box.
+list_vectors <- function(directory){
+  return(list.files(path=directory, pattern='.shp$', full.names=TRUE))
+}
+
 bbox_union_of_vectors <- function(list_of_vectors) {
   bbox_union <- NULL
   for (vector_path in list_of_vectors){
-    vector <- readOGR(vector_path)
-    vector_bbox = bbox(vector)
+    vector_bbox <- ogrInfo(vector_path)[['extent']]
     if (is.null(bbox_union)) {
-      bbox_union <- vector_box
+      bbox_union <- vector_bbox
     } else {
       bbox_union[1] <- min(bbox_union[1], vector_bbox[1])
       bbox_union[2] <- min(bbox_union[2], vector_bbox[2])
