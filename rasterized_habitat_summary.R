@@ -1,6 +1,8 @@
 library(raster)
 library(maptools)
 library(sp)
+library(rgdal)
+library(gdalUtils)
 
 # Inputs:
 #   * All habitat layers are ESRI Shapefiles within a specific folder.
@@ -45,7 +47,16 @@ list_vectors <- function(directory){
 bbox_union_of_vectors <- function(list_of_vectors) {
   bbox_union <- NULL
   for (vector_path in list_of_vectors){
-    vector_bbox <- ogrInfo(vector_path)[['extent']]
+    print(vector_path)
+    layer_name <- gsub('.shp', '', basename(vector_path))
+
+    # On average, It's much faster to do a system call to ogrinfo (especially in summary-only mode)
+    # than it is to rely on rgdal::ogrInfo to read in all geometries when we only
+    # need the bounding boxes for this calculation.
+    extent_string <- ogrinfo(vector_path, layer_name, so=TRUE)[9]  # 9th row contains extents.
+    vector_bbox = as.numeric(unlist(regmatches(extent_string, gregexpr('(-?[0-9.]+)', extent_string))))
+    print(vector_bbox)
+
     if (is.null(bbox_union)) {
       bbox_union <- vector_bbox
     } else {
