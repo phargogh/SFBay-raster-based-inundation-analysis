@@ -87,9 +87,10 @@ rasterize_vector <- function(vector_path, out_raster_path, bbox, pixel_size, all
                  at=all_touched,
                  burn=1,  # burned pixels will have a value of 1
                  te=bbox,  # georeferenced extents
+                 co='COMPRESS=LZW',  # LZW compression is compatible with ArcGIS
                  ts=c(ceiling(bbox[3] - bbox[1]) / pixel_size,  # width of raster in pixels
                       ceiling(bbox[4] - bbox[2]) / pixel_size),  # height of raster in pixels
-                 ot='Byte',  # store values as byte values
+                 ot='Byte',  # store values as byte values to minimize required disk space.
                  init=0  # Default band values to 0
   )
 }
