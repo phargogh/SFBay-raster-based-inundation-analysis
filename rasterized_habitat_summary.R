@@ -98,12 +98,14 @@ rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touche
 }
 
 habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixel_size, out_table) {
+  dir.create(workspace)
   rasterized_habitats_dir <- file.path(workspace, 'rasterized_habitats')
   rasterized_geounits_dir <- file.path(workspace, 'rasterized_geounits')
   dir.create(rasterized_habitats_dir)
   dir.create(rasterized_geounits_dir)
   
   # Get the union of the bboxes of the vectors in habitats_dir and geounits_dir
+  print("Getting bounding box for analysis")
   analysis_bbox = bbox_union_of_vectors(
     append(list_vectors(habitats_dir), list_vectors(geounits_dir)))
   
