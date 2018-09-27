@@ -128,6 +128,18 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixe
 }
 
 overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
+  column_names <- c("Geounit")
+  
+  # iterate over the habitats to add column names to the list
+  for (habitat_raster_filename in list.files(path=habitat_rasters_dir, pattern='.tif$')){
+    column_names <- c(column_names, c(gsub('.tif', '', habitat_raster_filename)))
+  }
+  
+  # create an empty dataframe with correct columns.
+  summary_df = data.frame(ncol=length(column_names))
+  colnames(summary_df) <- column_names
+  
+  n_geounit <- 1
   for (geounit_raster_path in list.files(path=geounit_rasters_dir, pattern='.tif$', full.names=TRUE)){
     geounit_raster <- raster(geounit_raster_path)
     cell_area <- xres(habitat_raster) * yres(habitat_raster)
@@ -136,7 +148,11 @@ overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_r
     for (habitat_raster_path in list.files(path=habitat_rasters_dir, pattern='.tif$', full.names=TRUE)){
       habitat_matrix <- as.matrix(raster(habitat_raster_path))
       overlapping_area <- sum(geounit_matrix & habitat_matrix) * cell_area
+      column_name = gsub('.tif', '', basename(habitat_raster_path))
+      summary_df[n_geounit, column_name] <- overlapping_area
     }
+    n_geounit <- n_geounit + 1
   }
+  write.csv(summary_df, out_csv)
   
 }
