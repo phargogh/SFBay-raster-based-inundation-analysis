@@ -66,7 +66,6 @@ get_vector_bbox <- function(vector_path){
 bbox_union_of_vectors <- function(list_of_vectors) {
   bbox_union <- NULL
   for (vector_path in list_of_vectors){
-    print(vector_path)
     vector_bbox = get_vector_bbox(vector_path)
 
     if (is.null(bbox_union)) {
@@ -83,7 +82,8 @@ bbox_union_of_vectors <- function(list_of_vectors) {
 
 rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE){
   rasterized_name <- gsub('.shp', '.tif', basename(vector_path))
-
+  sprintf('Rasterizing %s to %s', vector_path, file.path(dest_dir, rasterized_name))
+  
   gdal_rasterize(vector_path,
                  file.path(dest_dir, rasterized_name),
                  at=all_touched,
@@ -112,6 +112,7 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixe
 
   # There's probably a nice way to loop over these two sets of vectors,
   # but I haven't found it yet.
+  print("Rasterizing habitat vectors")
   for (habitats_vector in list_vectors(habitats_dir)){
     rasterize_vector(habitats_vector,
                      rasterized_habitats_dir,
@@ -120,8 +121,9 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixe
                      all_touched=FALSE)
   }
   
+  print("Rasterizing geounit vectors")
   for (geounits_vector in list_vectors(geounits_dir)) {
-    rasterize_vector(habitats_vector,
+    rasterize_vector(geounits_vector,
                      rasterized_geounits_dir,
                      analysis_bbox,
                      pixel_size,
