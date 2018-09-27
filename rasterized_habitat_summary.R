@@ -81,9 +81,11 @@ bbox_union_of_vectors <- function(list_of_vectors) {
   return(bbox_union)
 }
 
-rasterize_vector <- function(vector_path, out_raster_path, bbox, pixel_size, all_touched=FALSE){
+rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE){
+  rasterized_name <- gsub('.shp', '.tif', basename(vector_path))
+
   gdal_rasterize(vector_path,
-                 out_raster_path,
+                 file.path(dest_dir, rasterized_name),
                  at=all_touched,
                  burn=1,  # burned pixels will have a value of 1
                  te=bbox,  # georeferenced extents
@@ -93,4 +95,48 @@ rasterize_vector <- function(vector_path, out_raster_path, bbox, pixel_size, all
                  ot='Byte',  # store values as byte values to minimize required disk space.
                  init=0  # Default band values to 0
   )
+}
+
+habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixel_size, out_table) {
+  rasterized_habitats_dir <- file.path(workspace, 'rasterized_habitats')
+  rasterized_geounits_dir <- file.path(workspace, 'rasterized_geounits')
+  dir.create(rasterized_habitats_dir)
+  dir.create(rasterized_geounits_dir)
+  
+  # Get the union of the bboxes of the vectors in habitats_dir and geounits_dir
+  analysis_bbox = bbox_union_of_vectors(
+    append(list_vectors(habitats_dir), list_vectors(geounits_dir)))
+  
+
+  # There's probably a nice way to loop over these two sets of vectors,
+  # but I haven't found it yet.
+  for (habitats_vector in list_vectors(habitats_dir)){
+    rasterize_vector(habitats_vector,
+                     rasterized_habitats_dir,
+                     analysis_bbox,
+                     pixel_size,
+                     all_touched=FALSE)
+  }
+  
+  for (geounits_vector in list_vectors(geounits_dir)) {
+    rasterize_vector(habitats_vector,
+                     rasterized_geounits_dir,
+                     analysis_bbox,
+                     pixel_size,
+                     all_touched=FALSE)
+  }
+}
+
+overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
+  for (geounit_raster_path in list.files(path=geounit_rasters_dir, pattern='.tif$', full.names=TRUE)){
+    geounit_raster <- raster(geounit_raster_path)
+    cell_area <- xres(habitat_raster) * yres(habitat_raster)
+    geounit_matrix <- as.matrix(geounit_raster)
+    
+    for (habitat_raster_path in list.files(path=habitat_rasters_dir, pattern='.tif$', full.names=TRUE)){
+      habitat_matrix <- as.matrix(raster(habitat_raster_path))
+      overlapping_area <- sum(geounit_matrix & habitat_matrix) * cell_area
+    }
+  }
+  
 }
