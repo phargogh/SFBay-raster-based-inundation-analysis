@@ -80,8 +80,15 @@ bbox_union_of_vectors <- function(list_of_vectors) {
   return(bbox_union)
 }
 
-rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE){
-  rasterized_name <- gsub('.shp', '.tif', basename(vector_path))
+rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE, fieldname='*', fieldvalue=NULL){
+  if (fieldname == '*') {
+    where_sql <- "IS NOT NULL"
+    rasterized_name <- gsub('.shp', '.tif', basename(vector_path))
+  } else {
+    where_sql <- sprintf("%s='%s'", fieldname, fieldvalue)
+    rasterized_name <- sprintf('%s.tif', fieldvalue)
+  }
+  
   sprintf('Rasterizing %s to %s', vector_path, file.path(dest_dir, rasterized_name))
   
   gdal_rasterize(vector_path,
@@ -93,8 +100,34 @@ rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touche
                  ts=c(ceiling(bbox[3] - bbox[1]) / pixel_size,  # width of raster in pixels
                       ceiling(bbox[4] - bbox[2]) / pixel_size),  # height of raster in pixels
                  ot='Byte',  # store values as byte values to minimize required disk space.
-                 init=0  # Default band values to 0
+                 init=0,  # Default band values to 0
+                 where=where_sql,  # only rasterize the polygon we want, based on field value.
+                 verbose=TRUE  # show gdal commands used
   )
+}
+
+rasterize_vector_by_fieldname <- function(vector_path, fieldname, out_dir, bbox, pixel_size, all_touched=FALSE){
+  layer <- gsub('.shp', '', basename(vector_path))
+  response <- ogrinfo(vector_path,
+                      layer=layer,
+                      q=TRUE,  # suppress most of the stuff we don't care about
+                      sql=sprintf('SELECT DISTINCT %s FROM %s', fieldname, layer)  # just print the fields we want
+  )
+  for (line in response) {
+    # Does the line printed contain a field value?
+    if (length(grep(sprintf('^  %s ', fieldname), line)) > 0){
+      field_value <- trimws(strsplit(line, '=')[[1]][2])
+      rasterize_vector(vector_path,
+                       dest_dir=out_dir,
+                       bbox=bbox,
+                       pixel_size=pixel_size,
+                       all_touched=all_touched,
+                       fieldname=fieldname,  
+                       fieldvalue=field_value  # limit rasterization to just this polygon
+      )
+      
+    }
+  }
 }
 
 habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixel_size, out_table) {
@@ -113,22 +146,27 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixe
   # There's probably a nice way to loop over these two sets of vectors,
   # but I haven't found it yet.
   print("Rasterizing habitat vectors")
-  for (habitats_vector in list_vectors(habitats_dir)){
-    rasterize_vector(habitats_vector,
-                     rasterized_habitats_dir,
-                     analysis_bbox,
-                     pixel_size,
-                     all_touched=FALSE)
-  }
+  #for (habitats_vector in list_vectors(habitats_dir)){
+  #  rasterize_vector(habitats_vector,
+  #                   rasterized_habitats_dir,
+  #                   analysis_bbox,
+  #                   pixel_size,
+  #                   all_touched=FALSE)
+  #}
   
+  # TODO: These will need to be much more specific so I can capture each of the features represented.
   print("Rasterizing geounit vectors")
-  for (geounits_vector in list_vectors(geounits_dir)) {
-    rasterize_vector(geounits_vector,
-                     rasterized_geounits_dir,
-                     analysis_bbox,
-                     pixel_size,
-                     all_touched=FALSE)
-  }
+  rasterize_vector_by_fieldname(
+    'data/jd_geounits/SMC_OLUs_complete_subtidal_albersconical.shp', 'NAME', rasterized_geounits_dir, analysis_bbox,
+    pixel_size, all_touched=FALSE)
+
+  #for (geounits_vector in list_vectors(geounits_dir)) {
+  #  rasterize_vector(geounits_vector,
+  #                   rasterized_geounits_dir,
+  #                   analysis_bbox,
+  #                   pixel_size,
+  #                   all_touched=FALSE)
+  #}
 }
 
 overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
