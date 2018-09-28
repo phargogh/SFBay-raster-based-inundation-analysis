@@ -182,7 +182,9 @@ warp_raster_to_bbox <-function(raster_path, target_raster_path, bbox, pixel_size
            te=bbox,  # The new raster extents
            overwrite=TRUE,  # overwrite the raster if it already exists
            multi=TRUE,  # enable multithreaded warping
+           wo='INIT_DEST=0',  # initialize newly-exposed pixel values to 0
            r='near',  # use nearest-neighbor resampling if needed.
+           verbose=TRUE,  # show the GDAL command being executed.
            ts=c(ceiling(bbox[3] - bbox[1]) / pixel_size,  # width of raster in pixels
                 ceiling(bbox[4] - bbox[2]) / pixel_size)  # height of raster in pixels
   )
