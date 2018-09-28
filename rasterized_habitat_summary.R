@@ -257,6 +257,42 @@ overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_r
     summary_df <- rbind(summary_df, as.data.frame(as.list(setNames(row_values, column_names))))
   }
   write.csv(summary_df, out_csv)
+}
+
+habitat_inundation <- function(habitat_rasters_dir, geounit_rasters_dir, inundation_dir, out_csv){
+  # create an empty dataframe that we can populate later.
+  summary_df = data.frame()
   
+  for (geounit_raster_path in list.files(path=geounit_rasters_dir, pattern='.tif$', full.names=TRUE)){
+    print(sprintf('Calculating overlap for geounit %s', basename(geounit_raster_path)))
+
+    geounit_raster <- raster(geounit_raster_path)
+    cell_area <- xres(geounit_raster) * yres(geounit_raster)
+    geounit_matrix <- as.matrix(geounit_raster)
+    
+    for (inundation_raster_path in list.files(path=inundation_dir, pattern='.tif$', full.names=TRUE)){
+      column_names <- c('geounit', 'inundation_scenario')
+      row_values <- append(basename(geounit_raster_path), basename(inundation_raster_path))
+      
+      print(sprintf('Calculating inundation for %s', basename(inundation_raster_path)))
+      inundation_raster <- raster(inundation_raster_path)
+      inundation_matrix <- as.matrix(inundation_raster)
+      
+      for (habitat_raster_path in list.files(path=habitat_rasters_dir, pattern='.tif$', full.names=TRUE)){
+        habitat_matrix <- as.matrix(raster(habitat_raster_path))
+        overlapping_area <- sum(geounit_matrix & habitat_matrix & inundation_matrix) * cell_area
+        column_name = gsub('.tif', '', basename(habitat_raster_path))
+        column_names <- append(column_names, c(column_name))
+        row_values <- append(row_values, c(overlapping_area))
+        print(sprintf('Inundated area for habitat %s: %s', basename(habitat_raster_path), overlapping_area))
+      }
+      # Want a new row for each pair of (geounit, inundation).
+      print(row_values)
+      print(column_names)
+      print(summary_df)
+      summary_df <- rbind(summary_df, as.data.frame(as.list(setNames(row_values, column_names))))
+    }
+  }
+  write.csv(summary_df, out_csv)
 }
 
