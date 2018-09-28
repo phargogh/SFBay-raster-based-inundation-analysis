@@ -176,6 +176,15 @@ rasterize_vector_by_fieldname <- function(vector_path, fieldname, out_dir, bbox,
 }
 
 
+# Clip or expand a raster to a different bounding box.
+#
+# Pixel values that are outside of the original raster's values will be set to 0.
+#
+# Parameters
+#   raster_path (string): Path to the source raster.
+#   target_raster_path (string): Where the target raster should be written.
+#   bbox (vector): 4-item vector of (minx, miny, maxx, maxy).
+#   pixel_size (number): the approximate pixel size to use.
 warp_raster_to_bbox <-function(raster_path, target_raster_path, bbox, pixel_size) {
   gdalwarp(raster_path,
            target_raster_path,
@@ -190,7 +199,27 @@ warp_raster_to_bbox <-function(raster_path, target_raster_path, bbox, pixel_size
   )
 }
 
-habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_dir, pixel_size, out_table) {
+
+# Conduct the whole habitat summary analysis.
+#
+# NOTE: All inputs must be in the same projected coordinate system.
+#
+# Parameters:
+#     workspace (string): Where outputs should be stored.  Three new directories will be created:
+#       * '<workspace>/rasterized_habitats' for the rasterized habitat vectors
+#       * '<workspace>/rasterized_geounits' for the rasterized geounit geometries
+#       * '<workspace>/aligned_slr_rasters' for the aligned inundation scenarios
+#     habitats_dir (string): Path to a directory containing ESRI Shapefiles of habitats.
+#       Every shapefile in this directory will be rasterized.
+#     geounits_dir (string): Path to a directory containing ESRI Shapefiles of geounits.
+#       NOTE: you'll need to modify the source code of this function to specify which geounits to rasterize
+#       and which column name to use as their indentifier.
+#     slr_dir (string): Path to a directory containing GeoTiffs representing which pixels are inundated.
+#       Pixel values must be either 0 (not inundated) or 1 (inundated).
+#     pixel_size (number): the approximate pixel size to use for the output analysis.  All rasters in this
+#       analysis will share the same origin and pixel size.
+#
+habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_dir, pixel_size) {
   dir.create(workspace)
   rasterized_habitats_dir <- file.path(workspace, 'rasterized_habitats')
   rasterized_geounits_dir <- file.path(workspace, 'rasterized_geounits')
@@ -210,6 +239,7 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_
                   raster_files)))
   
   print('Expanding SLR rasters')
+  # This takes the SLR scenario rasters and aligns them with the analysis bounding box.
   for (raster_file in raster_files){
     target_raster_path <- file.path(aligned_slr_dir, basename(raster_file))
     warp_raster_to_bbox(raster_file, target_raster_path, analysis_bbox, pixel_size)
@@ -231,8 +261,26 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_
     'data/jd_geounits/SMC_OLUs_complete_subtidal_albersconical.shp', 'NAME', rasterized_geounits_dir, analysis_bbox,
     pixel_size, all_touched=FALSE)
 
+  overlap_between_habitats_and_geounits(rasterized_habitats_dir,
+                                        rasterized_geounits_dir,
+                                        file.path(workspace, 'habitats_in_geounits.csv'))
+  
+  habitat_inundation(rasterized_habitats_dir,
+                     rasterized_geounits_dir,
+                     aligned_slr_dir,
+                     file.path(workspace, 'inundated_habitat_area_per_geounit.csv'))
 }
 
+
+# Calculate the overlapping area between habitats and geounits.
+#
+# Parameters:
+#   habitat_rasters_dir (string): path to directory containing boolean rasters of habitats,
+#     one geotiff per habitat.
+#   geounit_rasters_dir (string): path to directory containing boolean rasters of geounits,
+#     one geotiff per geounit.
+#   out_csv (string): path to where the output CSV should be stored.
+#
 overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
   # create an empty dataframe that we can populate later.
   summary_df = data.frame()
@@ -259,7 +307,18 @@ overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_r
   write.csv(summary_df, out_csv)
 }
 
-habitat_inundation <- function(habitat_rasters_dir, geounit_rasters_dir, inundation_dir, out_csv){
+# Calculate inundated habitat area per SLR scenario per geounit.
+#
+# Parameters:
+#   habitat_rasters_dir (string): path to directory containing boolean rasters of habitats,
+#     one geotiff per habitat.
+#   geounit_rasters_dir (string): path to directory containing boolean rasters of geounits,
+#     one geotiff per geounit.
+#   inundation_rasters_dir (string): path to directory containing boolean rasters of
+#     inundated areas, one geotiff per inundation scenario.
+#   out_csv (string): path to where the output CSV should be saved.
+#
+habitat_inundation <- function(habitat_rasters_dir, geounit_rasters_dir, inundation_rasters_dir, out_csv){
   # create an empty dataframe that we can populate later.
   summary_df = data.frame()
   
@@ -270,7 +329,7 @@ habitat_inundation <- function(habitat_rasters_dir, geounit_rasters_dir, inundat
     cell_area <- xres(geounit_raster) * yres(geounit_raster)
     geounit_matrix <- as.matrix(geounit_raster)
     
-    for (inundation_raster_path in list.files(path=inundation_dir, pattern='.tif$', full.names=TRUE)){
+    for (inundation_raster_path in list.files(path=inundation_rasters_dir, pattern='.tif$', full.names=TRUE)){
       column_names <- c('geounit', 'inundation_scenario')
       row_values <- append(basename(geounit_raster_path), basename(inundation_raster_path))
       
