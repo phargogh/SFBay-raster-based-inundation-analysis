@@ -111,7 +111,7 @@ bbox_union <- function(list_of_spatial_files) {
 #    ``fieldvalue`` will be rasterized.
 rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE, fieldname='*', fieldvalue=NULL){
   if (fieldname == '*') {
-    where_sql <- "IS NOT NULL"
+    where_sql <- ""
     rasterized_name <- gsub('.shp', '.tif', basename(vector_path))
   } else {
     where_sql <- sprintf("%s='%s'", fieldname, fieldvalue)
@@ -260,3 +260,4 @@ overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_r
   write.csv(summary_df, out_csv)
   
 }
+
