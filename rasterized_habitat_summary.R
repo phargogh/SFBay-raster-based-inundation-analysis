@@ -3,6 +3,7 @@ library(maptools)
 library(sp)
 library(rgdal)
 library(gdalUtils)
+library(tools)
 
 # Inputs:
 #   * All habitat layers are ESRI Shapefiles within a specific folder.
@@ -52,6 +53,9 @@ list_crs <- function(list_of_vectors) {
   }
 }
 
+# Get the bounding box (in projected coordinates) of an ESRI Shapefile.
+#
+# Returns a 4-item vector of (minx, miny, maxx, maxy)
 get_vector_bbox <- function(vector_path){
   layer_name <- gsub('.shp', '', basename(vector_path))
   
@@ -63,23 +67,48 @@ get_vector_bbox <- function(vector_path){
   return(vector_bbox)
 }
 
-bbox_union_of_vectors <- function(list_of_vectors) {
+# Take the union of the bboxes of a list of spatial files and return it.
+#
+# Files must be either GeoTiffs with the lowercase extension .tif or they
+# must be ESRI Shapefiles with the lowercase extension .shp.
+#
+# Returns a 4-item vector of (minx, miny, maxx, maxy)
+bbox_union <- function(list_of_spatial_files) {
   bbox_union <- NULL
-  for (vector_path in list_of_vectors){
-    vector_bbox = get_vector_bbox(vector_path)
+  for (filepath in list_of_spatial_files){
+    if (file_ext(filepath) == 'tif'){
+      spatial_bbox = c(gdalinfo(filepath, raw_output=FALSE)$bbox)
+    } else {
+      # Assume it's an ESRI shapefile
+      spatial_bbox = get_vector_bbox(filepath)
+    }
 
     if (is.null(bbox_union)) {
-      bbox_union <- vector_bbox
+      bbox_union <- spatial_bbox
     } else {
-      bbox_union[1] <- min(bbox_union[1], vector_bbox[1])
-      bbox_union[2] <- min(bbox_union[2], vector_bbox[2])
-      bbox_union[3] <- max(bbox_union[3], vector_bbox[3])
-      bbox_union[4] <- max(bbox_union[4], vector_bbox[4])
+      bbox_union[1] <- min(bbox_union[1], spatial_bbox[1])
+      bbox_union[2] <- min(bbox_union[2], spatial_bbox[2])
+      bbox_union[3] <- max(bbox_union[3], spatial_bbox[3])
+      bbox_union[4] <- max(bbox_union[4], spatial_bbox[4])
     }
   }
   return(bbox_union)
 }
 
+# Take an ESRI Shapefile and rasterize it.
+#
+# Parameters:
+#  vector_path (string path) - The vector to rasterize.
+#  dest_dir (string path) - The directory where the raster should be written.
+#  bbox (vector) - A 4-item vector of (minx, miny, maxx, maxy), in projected coordinates.
+#    The new raster will have this bounding box.
+#  pixel_size (number) - The pixel size of the output raster.
+#  all_touched=FALSE (boolean) - If TRUE, any pixel that overlaps the geometry will be burned in.
+#    If FALSE, GDAL only includes pixels where the centerpoint is within the geometry.
+#  fieldname='*' (string) - If provided, this parameter must be used in conjunction with the ``fieldvalue`` parameter
+#    If provided, the field values will be selected from the field matching this name.
+#  fieldvalue=NULL (string) - If fieldname is defined, only those geometries where ``fieldname``'s value matches this
+#    ``fieldvalue`` will be rasterized.
 rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touched=FALSE, fieldname='*', fieldvalue=NULL){
   if (fieldname == '*') {
     where_sql <- "IS NOT NULL"
@@ -106,6 +135,22 @@ rasterize_vector <- function(vector_path, dest_dir, bbox, pixel_size, all_touche
   )
 }
 
+
+# Take a vector and rasterize geometries by their fieldname.
+#
+# New rasters are created with names according to the values within the defined fieldname.
+# So, if the vector dataset has three distinct field values ("Rock", "Sand", "Grass"), three
+# new rasters will be created in the output directory, "Rock.tif", "Sand.tif", "Grass.tif".
+# If multiple features have the same field value, those geometries will all be represented in the
+# output raster.
+#
+# Parameters:
+#    vector_path (string): The vector to rasterize
+#    fieldname (string): The fieldname with values to group by.
+#    out_dir (string): The directory the output rasters should be written to.
+#    bbox (vector): 4-item vector of (minx, maxx, miny, maxy).
+#    pixel_size (number): The pixel size of the outputs.
+#    all_touched=FALSE (boolean): Whether to burn in any pixels that the geometries encounter.
 rasterize_vector_by_fieldname <- function(vector_path, fieldname, out_dir, bbox, pixel_size, all_touched=FALSE){
   layer <- gsub('.shp', '', basename(vector_path))
   response <- ogrinfo(vector_path,
@@ -130,43 +175,60 @@ rasterize_vector_by_fieldname <- function(vector_path, fieldname, out_dir, bbox,
   }
 }
 
-habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, pixel_size, out_table) {
+
+warp_raster_to_bbox <-function(raster_path, target_raster_path, bbox, pixel_size) {
+  gdalwarp(raster_path,
+           target_raster_path,
+           te=bbox,  # The new raster extents
+           overwrite=TRUE,  # overwrite the raster if it already exists
+           multi=TRUE,  # enable multithreaded warping
+           r='near',  # use nearest-neighbor resampling if needed.
+           ts=c(ceiling(bbox[3] - bbox[1]) / pixel_size,  # width of raster in pixels
+                ceiling(bbox[4] - bbox[2]) / pixel_size)  # height of raster in pixels
+  )
+}
+
+habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_dir, pixel_size, out_table) {
   dir.create(workspace)
   rasterized_habitats_dir <- file.path(workspace, 'rasterized_habitats')
   rasterized_geounits_dir <- file.path(workspace, 'rasterized_geounits')
+  aligned_slr_dir <- file.path(workspace, 'aligned_slr_rasters')
   dir.create(rasterized_habitats_dir)
   dir.create(rasterized_geounits_dir)
+  dir.create(aligned_slr_dir)
   
   # Get the union of the bboxes of the vectors in habitats_dir and geounits_dir
+  # and the rasters in slr_dir.
+  # This assumes that all inputs are in the same CRS and projection.
   print("Getting bounding box for analysis")
-  analysis_bbox = bbox_union_of_vectors(
-    append(list_vectors(habitats_dir), list_vectors(geounits_dir)))
+  raster_files <- list.files(path=slr_dir, pattern='.tif$', full.names=TRUE)
+  analysis_bbox = bbox_union(
+    append(list_vectors(habitats_dir),
+           append(list_vectors(geounits_dir),
+                  raster_files)))
   
-
-  # There's probably a nice way to loop over these two sets of vectors,
-  # but I haven't found it yet.
+  print('Expanding SLR rasters')
+  for (raster_file in raster_files){
+    target_raster_path <- file.path(aligned_slr_dir, basename(raster_file))
+    warp_raster_to_bbox(raster_file, target_raster_path, analysis_bbox, pixel_size)
+  }
+  
   print("Rasterizing habitat vectors")
-  #for (habitats_vector in list_vectors(habitats_dir)){
-  #  rasterize_vector(habitats_vector,
-  #                   rasterized_habitats_dir,
-  #                   analysis_bbox,
-  #                   pixel_size,
-  #                   all_touched=FALSE)
-  #}
-  
-  # TODO: These will need to be much more specific so I can capture each of the features represented.
+  for (habitats_vector in list_vectors(habitats_dir)){
+    rasterize_vector(habitats_vector,
+                     rasterized_habitats_dir,
+                     analysis_bbox,
+                     pixel_size,
+                     all_touched=FALSE)
+  }
+
+  # These are all specificallly defined as individual geo. unit rasters are created for each
+  # polygon in each geounit vector.  Maybe there's a nice way to loop through all of these?
   print("Rasterizing geounit vectors")
   rasterize_vector_by_fieldname(
     'data/jd_geounits/SMC_OLUs_complete_subtidal_albersconical.shp', 'NAME', rasterized_geounits_dir, analysis_bbox,
     pixel_size, all_touched=FALSE)
 
-  #for (geounits_vector in list_vectors(geounits_dir)) {
-  #  rasterize_vector(geounits_vector,
-  #                   rasterized_geounits_dir,
-  #                   analysis_bbox,
-  #                   pixel_size,
-  #                   all_touched=FALSE)
-  #}
 }
 
 overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
