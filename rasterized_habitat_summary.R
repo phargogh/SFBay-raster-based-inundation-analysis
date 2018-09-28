@@ -234,30 +234,27 @@ habitat_summary_analysis <- function(workspace, habitats_dir, geounits_dir, slr_
 }
 
 overlap_between_habitats_and_geounits <- function(habitat_rasters_dir, geounit_rasters_dir, out_csv){
-  column_names <- c("Geounit")
-  
-  # iterate over the habitats to add column names to the list
-  for (habitat_raster_filename in list.files(path=habitat_rasters_dir, pattern='.tif$')){
-    column_names <- c(column_names, c(gsub('.tif', '', habitat_raster_filename)))
-  }
-  
-  # create an empty dataframe with correct columns.
-  summary_df = data.frame(ncol=length(column_names))
-  colnames(summary_df) <- column_names
-  
-  n_geounit <- 1
+  # create an empty dataframe that we can populate later.
+  summary_df = data.frame()
+
   for (geounit_raster_path in list.files(path=geounit_rasters_dir, pattern='.tif$', full.names=TRUE)){
+    print(sprintf('Calculating overlap for geounit %s', basename(geounit_raster_path)))
+    column_names <- c('geounit')
+    row_values <- c(basename(geounit_raster_path))
+    
     geounit_raster <- raster(geounit_raster_path)
-    cell_area <- xres(habitat_raster) * yres(habitat_raster)
+    cell_area <- xres(geounit_raster) * yres(geounit_raster)
     geounit_matrix <- as.matrix(geounit_raster)
     
     for (habitat_raster_path in list.files(path=habitat_rasters_dir, pattern='.tif$', full.names=TRUE)){
       habitat_matrix <- as.matrix(raster(habitat_raster_path))
       overlapping_area <- sum(geounit_matrix & habitat_matrix) * cell_area
       column_name = gsub('.tif', '', basename(habitat_raster_path))
-      summary_df[n_geounit, column_name] <- overlapping_area
+      column_names <- append(column_names, c(column_name))
+      row_values <- append(row_values, c(overlapping_area))
+      print(sprintf('Overlapping area for habitat %s: %s', basename(habitat_raster_path), overlapping_area))
     }
-    n_geounit <- n_geounit + 1
+    summary_df <- rbind(summary_df, as.data.frame(as.list(setNames(row_values, column_names))))
   }
   write.csv(summary_df, out_csv)
   
